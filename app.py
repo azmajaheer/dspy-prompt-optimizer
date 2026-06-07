@@ -5,6 +5,75 @@ import json
 from io import StringIO
 from datetime import datetime, timezone
 import traceback
+from collections import defaultdict
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Model Pricing & Token Tracking
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Pricing in USD per 1M tokens (input, output)
+MODEL_PRICING = {
+    # OpenAI
+    "gpt-4o": (5.00, 15.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4-turbo": (10.00, 30.00),
+    "gpt-3.5-turbo": (0.50, 1.50),
+    # Anthropic
+    "claude-opus-4-8": (15.00, 75.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5-20251001": (0.80, 4.00),
+    "claude-3-5-sonnet-20241022": (3.00, 15.00),
+    "claude-3-haiku-20240307": (0.25, 1.25),
+    # Groq
+    "llama-3.1-8b-instant": (0.0, 0.0),  # Free tier
+    # Default fallback
+    "default": (1.00, 2.00),
+}
+
+def get_model_pricing(model_str: str) -> tuple[float, float]:
+    """Extract pricing (input_price, output_price) per 1M tokens."""
+    # Try exact match first
+    if model_str in MODEL_PRICING:
+        return MODEL_PRICING[model_str]
+    
+    # Try partial match (e.g., "gpt-4o-mini" from "openai/gpt-4o-mini")
+    for key, value in MODEL_PRICING.items():
+        if key in model_str.lower():
+            return value
+    
+    return MODEL_PRICING["default"]
+
+def calculate_cost(input_tokens: int, output_tokens: int, pricing: tuple[float, float]) -> float:
+    """Calculate cost in USD given token counts and pricing."""
+    input_price, output_price = pricing
+    cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+    return round(cost, 4)
+
+def get_token_usage() -> dict:
+    """Extract token usage from dspy.settings.litellm_usage_logs."""
+    usage_data = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "calls": 0,
+    }
+    
+    try:
+        # LiteLLM logs usage in dspy.settings.litellm_usage_logs
+        if hasattr(dspy.settings, "litellm_usage_logs"):
+            logs = dspy.settings.litellm_usage_logs
+            if logs and isinstance(logs, list):
+                for log in logs:
+                    if isinstance(log, dict):
+                        usage_data["input_tokens"] += log.get("prompt_tokens", 0)
+                        usage_data["output_tokens"] += log.get("completion_tokens", 0)
+                        usage_data["calls"] += 1
+                usage_data["total_tokens"] = usage_data["input_tokens"] + usage_data["output_tokens"]
+    except Exception:
+        pass
+    
+    return usage_data
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -24,6 +93,8 @@ def build_result_json(compiled, optimizer_name, sig_str, task_desc, params, metr
                 k: (int(v) if hasattr(v, "__index__") else v) for k, v in params.items()
             },
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "token_usage": {},  # Will be populated after run
+            "cost_usd": 0.0,    # Will be populated after run
         },
         "predictors": {},
     }
@@ -249,6 +320,8 @@ def record_run(opt_name, compiled, eval_score, trainset, devset,
         "compiled":    compiled,
         "devset":      devset,
         "timestamp":   datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+        "token_usage": {},  # Will be populated after run
+        "cost_usd":    0.0,  # Will be populated after run
     })
     st.session_state["compiled_program"] = compiled
     st.session_state["result_json"]      = rj
@@ -284,7 +357,7 @@ with st.sidebar:
 
     provider = st.selectbox(
         "Provider",
-        ["OpenAI", "Anthropic", "Together AI", "Custom (OpenAI-compatible)"],
+        ["OpenAI", "Anthropic", "Gemini", "Mistral", "Groq", "Together AI", "Custom (OpenAI-compatible)"],
     )
     api_key = st.text_input("API Key", type="password", placeholder="sk-...")
 
@@ -298,6 +371,25 @@ with st.sidebar:
             "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307",
         ])
         lm_model_id = f"anthropic/{model}"
+    elif provider == "Gemini":
+        model = st.selectbox("Model", ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"])
+        lm_model_id = f"gemini/{model}"
+    elif provider == "Mistral":
+         model = st.selectbox("Model", [
+        "mistral-large-latest",
+        "mistral-medium",
+        "mistral-small",
+        "open-mixtral-8x7b"
+    ])
+         lm_model_id = f"mistral/{model}"
+    elif provider == "Groq":
+        model = st.selectbox("Model", [
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "mixtral-8x7b-32768",
+        "gemma-7b-it"
+    ])
+        lm_model_id = f"groq/{model}"
     elif provider == "Together AI":
         model       = st.text_input("Model name", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")
         lm_model_id = f"together_ai/{model}"
@@ -941,6 +1033,10 @@ with tab3:
                         prog.progress(15, text=f"[{run_idx+1}/{n_sel}] {opt_name} — compiling…")
                         opt_params = dict(params_per_optimizer[opt_name])
 
+                        # Reset token tracking before this optimizer run
+                        if hasattr(dspy.settings, "litellm_usage_logs"):
+                            dspy.settings.litellm_usage_logs = []
+
                         with dspy.context(lm=lm):
                             # valset is used by optimizers for candidate selection;
                             # evalset is the separate held-out set used only for scoring.
@@ -971,6 +1067,23 @@ with tab3:
                         rj["meta"]["n_demos"]       = n_demos
                         rj["meta"]["instr_changed"] = instr_changed
                         rj["meta"]["baseline_score"] = base_score
+                        
+                        # Capture token usage and calculate cost
+                        token_usage = get_token_usage()
+                        pricing = get_model_pricing(lm_model_id)
+                        cost = calculate_cost(
+                            token_usage["input_tokens"],
+                            token_usage["output_tokens"],
+                            pricing
+                        )
+                        
+                        # Store token usage and cost in both session state and result JSON
+                        rj["meta"]["token_usage"] = token_usage
+                        rj["meta"]["cost_usd"] = cost
+                        
+                        st.session_state["optimization_runs"][-1]["token_usage"] = token_usage
+                        st.session_state["optimization_runs"][-1]["cost_usd"] = cost
+                        
                         # update the stored copy
                         st.session_state["optimization_runs"][-1]["result_json"] = rj
                         st.session_state["optimization_runs"][-1]["n_demos"]     = n_demos
@@ -982,12 +1095,14 @@ with tab3:
                             else None
                         )
                         results_so_far.append({
-                            "optimizer": opt_name, "score": eval_score, "delta": delta
+                            "optimizer": opt_name, "score": eval_score, "delta": delta,
+                            "tokens": token_usage["total_tokens"], "cost": cost
                         })
                         delta_str = f"  Δ baseline: {delta:+.2f}" if delta is not None else ""
+                        cost_str = f"  Cost: ${cost:.4f}" if cost > 0 else ""
                         prog.progress(100, text=(
                             f"[{run_idx+1}/{n_sel}] {opt_name} — done  "
-                            f"score: {eval_score}{delta_str}"
+                            f"score: {eval_score}{delta_str}{cost_str}"
                         ))
 
                     except Exception:
@@ -1003,7 +1118,7 @@ with tab3:
                         return "±0" if d == 0 else f"{d:+.2f}"
 
                     summary = "  |  ".join(
-                        f"**{r['optimizer']}**: {r['score']} ({_fmt_delta(r['delta'])})"
+                        f"**{r['optimizer']}**: {r['score']} ({_fmt_delta(r['delta'])}) | {r['tokens']} tokens | ${r['cost']:.4f}"
                         for r in results_so_far
                     )
                     status_box.success(f"✅ Done — {summary} — see **Results** tab.")
@@ -1037,6 +1152,7 @@ with tab4:
 
         # Build comparison dataframe
         compare_rows = []
+        total_cost = 0.0
         for idx, r in enumerate(runs):
             score_val = r["score"]
             delta_val = (
@@ -1044,11 +1160,18 @@ with tab4:
                 if score_val is not None and baseline_score is not None
                 else None
             )
+            token_usage = r.get("token_usage", {})
+            cost = r.get("cost_usd", 0.0)
+            total_cost += cost
             compare_rows.append({
                 "Run #":           idx + 1,
                 "Optimizer":       r["optimizer"],
                 "Score":           score_val if score_val is not None else "—",
                 "Δ Baseline":      (f"{delta_val:+.2f}" if delta_val is not None else "—"),
+                "Input Tokens":    token_usage.get("input_tokens", 0),
+                "Output Tokens":   token_usage.get("output_tokens", 0),
+                "Total Tokens":    token_usage.get("total_tokens", 0),
+                "Cost (USD)":      f"${cost:.4f}" if cost > 0 else "$0.00",
                 "Demos added":     r.get("n_demos", "—"),
                 "Instr. changed":  ("Yes" if r.get("instr_changed") else "No"),
                 "Eval rows":       r["n_eval"],
@@ -1060,6 +1183,14 @@ with tab4:
         # Baseline row
         if baseline_score is not None:
             st.metric("Baseline (no optimization)", f"{baseline_score}", help="Unoptimized module score on the same eval set")
+
+        # Cost summary
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("Total Cost (USD)", f"${total_cost:.4f}", help="Sum of all optimization runs")
+        with c2:
+            avg_cost = total_cost / len(runs) if runs else 0
+            st.metric("Average Cost per Run", f"${avg_cost:.4f}")
 
         # Highlight best and flag identical scores
         numeric_scores = [r["score"] for r in runs if r["score"] is not None]
@@ -1136,6 +1267,15 @@ with tab4:
         sc2.metric("Eval rows", run["n_eval"])
         sc3.metric("Optimizer", run["optimizer"])
         sc4.metric("Metric",    run["metric"])
+
+        # Token usage and cost banner
+        token_usage = run.get("token_usage", {})
+        cost_usd = run.get("cost_usd", 0.0)
+        tc1, tc2, tc3, tc4 = st.columns(4)
+        tc1.metric("Input Tokens", f"{token_usage.get('input_tokens', 0):,}")
+        tc2.metric("Output Tokens", f"{token_usage.get('output_tokens', 0):,}")
+        tc3.metric("Total Tokens", f"{token_usage.get('total_tokens', 0):,}")
+        tc4.metric("Cost (USD)", f"${cost_usd:.4f}")
 
         # ── Per-predictor details ──────────────────────────────────────────
         st.subheader("Optimized Predictors")
