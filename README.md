@@ -214,15 +214,386 @@ Contributions of all sizes are welcome — from fixing a typo in a tooltip to ad
 
 ---
 
-### 1. Fork and clone
+### Who should fork vs. clone directly?
+
+| You are… | What to do |
+|-----------|-----------|
+| **An external contributor** (anyone without write access to this repo) | **Fork first**, then clone your fork. You cannot push branches directly to this repo. |
+| **The repo owner / a collaborator with write access** | **Clone directly** — no fork needed. Create a branch and push it. |
+
+The steps below cover both paths. Read the section that applies to you.
+
+---
+
+### Path A — External contributors (fork-based workflow)
+
+This is the standard open-source path. You get your own copy of the repo on GitHub, make changes there, and raise a PR back to the original.
+
+#### A-1. Fork the repo on GitHub
+
+1. Go to `https://github.com/Laxminarayen/dspy-prompt-optimizer`
+2. Click **Fork** (top-right corner)
+3. Select your GitHub account as the destination
+4. GitHub creates `https://github.com/<your-username>/dspy-prompt-optimizer` — this is **your fork**
+
+> A fork is a full copy of the repo under your account. You have write access to it. The original repo is called **upstream**. Changes you make in your fork do not affect upstream until you open a PR and it gets merged.
+
+#### A-2. Clone your fork locally
 
 ```bash
-# 1. Click "Fork" on the GitHub repo page, then:
+# Clone YOUR fork (not the upstream repo)
 git clone https://github.com/<your-username>/dspy-prompt-optimizer.git
 cd dspy-prompt-optimizer
 
-# 2. Add the upstream remote so you can pull future changes
+# Verify the remote points to your fork
+git remote -v
+# origin  https://github.com/<your-username>/dspy-prompt-optimizer.git (fetch)
+# origin  https://github.com/<your-username>/dspy-prompt-optimizer.git (push)
+```
+
+#### A-3. Add the upstream remote
+
+This lets you pull future changes from the original repo into your fork:
+
+```bash
 git remote add upstream https://github.com/Laxminarayen/dspy-prompt-optimizer.git
+
+# Verify both remotes now exist
+git remote -v
+# origin    https://github.com/<your-username>/dspy-prompt-optimizer.git (fetch)
+# origin    https://github.com/<your-username>/dspy-prompt-optimizer.git (push)
+# upstream  https://github.com/Laxminarayen/dspy-prompt-optimizer.git (fetch)
+# upstream  https://github.com/Laxminarayen/dspy-prompt-optimizer.git (push)
+```
+
+> **Rule of thumb:** `origin` = your fork (you push here). `upstream` = the original repo (you only fetch/pull from here, never push).
+
+#### A-4. Set up your dev environment
+
+```bash
+conda create -n dspy-dev python=3.10 -y
+conda activate dspy-dev
+pip install -r requirements.txt
+```
+
+#### A-5. Sync your fork before starting work
+
+Always pull the latest changes from upstream before creating a branch. This avoids conflicts later:
+
+```bash
+git fetch upstream                    # download latest from upstream (no file changes yet)
+git checkout main                     # switch to your local main branch
+git merge upstream/main               # fast-forward your main to match upstream
+git push origin main                  # push the updated main back to your fork on GitHub
+```
+
+#### A-6. Create a feature branch
+
+Never work directly on `main`. Create a branch off the freshly-synced `main`:
+
+```bash
+git checkout main
+git checkout -b feat/rouge-metric
+# You are now on branch feat/rouge-metric, branched from main
+```
+
+Branch naming conventions:
+- `feat/` — new feature
+- `fix/` — bug fix
+- `docs/` — documentation only
+- `refactor/` — code cleanup with no behaviour change
+
+#### A-7. Make your changes, commit
+
+```bash
+# Edit app.py, requirements.txt, etc.
+
+# Stage only the files you changed (never git add -A blindly)
+git add app.py requirements.txt
+
+# Verify what is staged before committing
+git status
+git diff --staged
+
+# Commit with a clear message
+git commit -m "feat: add ROUGE-L metric for summarization tasks"
+```
+
+Multiple small commits are fine while working. The commit history will be visible in the PR.
+
+#### A-8. Push the branch to your fork
+
+```bash
+git push -u origin feat/rouge-metric
+# -u links your local branch to origin/feat/rouge-metric
+# Future pushes on this branch only need: git push
+```
+
+#### A-9. Open the pull request
+
+**Via GitHub CLI (recommended):**
+
+```bash
+gh pr create \
+  --repo Laxminarayen/dspy-prompt-optimizer \
+  --base main \
+  --head <your-github-username>:feat/rouge-metric \
+  --title "feat: add ROUGE-L metric for summarization tasks" \
+  --body "$(cat <<'EOF'
+## What this PR does
+Adds ROUGE-L F-measure as a selectable evaluation metric.
+
+## Why
+Exact Match and F1 Token Overlap are too strict for summarization tasks
+where multiple valid phrasings exist. Closes #<issue-number> if applicable.
+
+## How to test it
+1. Load the built-in example dataset (Tab 1 → Use example dataset)
+2. Go to Tab 2 → Metric dropdown → select ROUGE-L
+3. Run BootstrapFewShot
+4. Confirm the score in the Results tab is a float between 0 and 1
+
+## Checklist
+- [x] Tested with built-in example (10-row training + 5-row test)
+- [x] Tested with squad_sample_200.csv
+- [x] requirements.txt updated
+- [x] No API keys or personal data committed
+EOF
+)"
+```
+
+**Via the GitHub web UI:**
+
+1. After pushing, visit `https://github.com/<your-username>/dspy-prompt-optimizer`
+2. GitHub shows a yellow banner: **"feat/rouge-metric had recent pushes — Compare & pull request"** — click it
+3. On the PR page, confirm:
+   - **base repository:** `Laxminarayen/dspy-prompt-optimizer` → **base:** `main`
+   - **head repository:** `<your-username>/dspy-prompt-optimizer` → **compare:** `feat/rouge-metric`
+4. Fill in title and body, then click **Create pull request**
+
+If the banner has disappeared: go to the **Pull requests** tab → **New pull request** → **compare across forks** → set the head fork and branch manually.
+
+---
+
+### Path B — Maintainer / collaborator (direct clone workflow)
+
+If you have write access to the repo, you do not need a fork. Clone the repo directly and push branches straight to it.
+
+#### B-1. Clone the repo directly
+
+```bash
+git clone https://github.com/Laxminarayen/dspy-prompt-optimizer.git
+cd dspy-prompt-optimizer
+
+# You have a single remote — origin points to the real repo
+git remote -v
+# origin  https://github.com/Laxminarayen/dspy-prompt-optimizer.git (fetch)
+# origin  https://github.com/Laxminarayen/dspy-prompt-optimizer.git (push)
+```
+
+#### B-2. Set up your dev environment
+
+```bash
+conda create -n dspy-dev python=3.10 -y
+conda activate dspy-dev
+pip install -r requirements.txt
+```
+
+#### B-3. Create a feature branch
+
+```bash
+git checkout main
+git pull origin main          # get the latest main before branching
+git checkout -b feat/my-feature
+```
+
+#### B-4. Make changes, commit, push
+
+```bash
+git add app.py
+git commit -m "feat: my feature"
+git push -u origin feat/my-feature
+```
+
+#### B-5. Open the PR — branch to main on the same repo
+
+```bash
+gh pr create \
+  --base main \
+  --head feat/my-feature \
+  --title "feat: my feature" \
+  --body "Description of what changed and why."
+# No --repo flag needed — gh detects the current repo from the git remote
+```
+
+Via the web UI, the flow is the same as Path A step A-9 except both sides are on `Laxminarayen/dspy-prompt-optimizer` (no "compare across forks" needed).
+
+---
+
+### Common steps (both paths)
+
+The following applies whether you forked or cloned directly.
+
+#### Responding to review comments
+
+After a reviewer leaves feedback, update the code and push again. GitHub updates the PR automatically — never close and re-open.
+
+```bash
+# Make the requested changes, then:
+git add app.py
+git commit -m "fix: address review — switch to stemmer=False per feedback"
+git push origin feat/rouge-metric   # or feat/my-feature
+```
+
+To reply to a specific comment from the terminal:
+
+```bash
+gh pr review <pr-number> --comment \
+  --body "Done — switched to stemmer=False. Let me know if this looks good."
+```
+
+#### Handling merge conflicts
+
+If GitHub shows "This branch has conflicts that must be resolved":
+
+```bash
+# External contributors (fork-based):
+git fetch upstream
+git rebase upstream/main
+
+# Collaborators (direct clone):
+git fetch origin
+git rebase origin/main
+
+# Git pauses at each conflicting file and shows markers:
+# <<<<<<< HEAD      (your changes)
+# =======
+# >>>>>>> origin/main  (the incoming changes)
+#
+# Edit the file to keep the correct version, remove the markers, then:
+git add app.py
+git rebase --continue
+
+# If the rebase gets complicated and you want to start over:
+git rebase --abort
+
+# Push the resolved branch
+git push origin feat/rouge-metric --force-with-lease
+```
+
+`--force-with-lease` is safer than `--force` — it refuses to overwrite if someone else pushed to your branch after your last fetch.
+
+#### Keeping in sync with main (fork-based contributors only)
+
+While your PR is open, sync your fork's `main` regularly so future branches start from a current state:
+
+```bash
+git fetch upstream                  # get latest upstream changes
+git checkout main
+git merge upstream/main             # update your local main
+git push origin main                # push the updated main to your fork
+```
+
+---
+
+### PR description template
+
+Use this every time you open a PR:
+
+```markdown
+## What this PR does
+<!-- One specific sentence. "Adds ROUGE-L metric" not "Improves things". -->
+
+## Why
+<!-- Motivation. Link to an issue with "Closes #<number>" if one exists. -->
+
+## How to test it
+1. Load the built-in example dataset (Tab 1 → Use example dataset)
+2. <!-- next step -->
+3. Expected result: <!-- what the reviewer should see -->
+
+## Screenshots (if UI changed)
+<!-- Drag and drop a screenshot here -->
+
+## Checklist
+- [ ] Tested with the built-in example (10-row training + 5-row test)
+- [ ] Tested with squad_sample_200.csv as training data
+- [ ] requirements.txt updated if a new package was added
+- [ ] No API keys, .env files, or personal CSV data committed
+- [ ] Column name sanitization not broken (tested with a space in a column name)
+```
+
+#### Draft PR (work in progress)
+
+Open a draft PR to get early feedback before your change is complete:
+
+```bash
+gh pr create \
+  --base main \
+  --head feat/rouge-metric \           # or <your-username>:feat/rouge-metric for forks
+  --title "feat: add ROUGE-L metric [WIP]" \
+  --draft \
+  --body "Opening early for design feedback on the metric wrapper API."
+
+# When the feature is complete, mark it ready:
+gh pr ready <pr-number>
+```
+
+---
+
+### `gh` command quick reference
+
+```bash
+# ── Auth ──────────────────────────────────────────────────────────��───────────
+gh auth login                                   # log in once
+gh auth status                                  # confirm you're authenticated
+
+# ── Forking (external contributors only) ─────────────────────────────────────
+gh repo fork Laxminarayen/dspy-prompt-optimizer --clone
+# Creates the fork on GitHub AND clones it locally in one step.
+# Automatically sets origin (your fork) and upstream (original repo).
+
+# ── Creating PRs ──────────────────────────────────────────────────────────────
+gh pr create                                    # interactive wizard
+gh pr create --base main --head feat/x \
+  --title "..." --body "..."                    # non-interactive, same repo
+gh pr create --repo owner/repo \
+  --head yourname:feat/x ...                    # from a fork to upstream
+gh pr create --draft                            # open as draft
+
+# ── Viewing PRs ───────────────────────────────────────────────────────────────
+gh pr list                                      # open PRs in current repo
+gh pr list --repo Laxminarayen/dspy-prompt-optimizer
+gh pr view <number>                             # view in terminal
+gh pr view <number> --web                       # open in browser
+gh pr view <number> --comments                  # show review comments
+gh pr diff <number>                             # show the file diff
+gh pr status                                    # PRs touching your branches
+
+# ── Updating PRs ──────────────────────────────────────────────────────────────
+gh pr edit <number> --title "new title"
+gh pr edit <number> --body "new description"
+gh pr edit <number> --add-label "enhancement"
+gh pr ready <number>                            # draft → ready for review
+gh pr ready <number> --undo                     # ready → back to draft
+
+# ── Reviewing ─────────────────────────────────────────────────────────────────
+gh pr review <number> --approve
+gh pr review <number> --request-changes --body "Please fix X"
+gh pr review <number> --comment --body "Looks good, just one nit"
+gh pr checkout <number>                         # check out PR branch locally to test it
+
+# ── Merging / closing ─────────────────────────────────────────────────────────
+gh pr merge <number> --squash                   # squash all commits into one
+gh pr merge <number> --rebase                   # rebase onto main
+gh pr merge <number> --merge                    # standard merge commit
+gh pr close <number> --comment "reason"         # close without merging
+
+# ── Issues ────────────────────────────────────────────────────────────────────
+gh issue list
+gh issue create --title "Bug: X crashes on Y" --body "Steps to reproduce..."
+gh issue view <number>
+gh issue close <number>
 ```
 
 ---
