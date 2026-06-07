@@ -410,48 +410,335 @@ Commit message guidelines:
 
 ### 9. Push and open a pull request
 
+There are two ways to raise a PR: the **GitHub CLI (`gh`)** (recommended, fully from terminal) or the **GitHub web UI**. Both are covered below.
+
+---
+
+#### Option A — GitHub CLI (`gh`)
+
+Install the CLI if you don't have it:
+
 ```bash
-git push origin feat/rouge-metric
+# macOS
+brew install gh
+
+# Windows (winget)
+winget install --id GitHub.cli
+
+# Linux (apt)
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+  https://cli.github.com/packages stable main" \
+  | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update && sudo apt install gh
 ```
 
-Then open a pull request on GitHub from your fork's branch to `main` on the upstream repo.
+Authenticate once:
 
-**PR description template** — fill in all sections:
-
+```bash
+gh auth login
+# Follow the prompts: select GitHub.com → HTTPS → authenticate via browser
+# Verify it worked:
+gh auth status
 ```
-## What this PR does
-One sentence summary of the change.
+
+**Step 1 — Push your branch to your fork:**
+
+```bash
+git push -u origin feat/rouge-metric
+# -u sets the upstream tracking so future `git push` needs no arguments
+```
+
+**Step 2 — Create the PR from the terminal:**
+
+```bash
+gh pr create \
+  --repo Laxminarayen/dspy-prompt-optimizer \
+  --base main \
+  --head <your-github-username>:feat/rouge-metric \
+  --title "feat: add ROUGE-L metric for summarization tasks" \
+  --body "## What this PR does
+Adds ROUGE-L F-measure as a selectable evaluation metric.
 
 ## Why
-Explain the motivation. Link to an issue if one exists.
+Exact Match and F1 Token Overlap are too strict for summarization tasks
+where multiple valid phrasings exist. ROUGE-L rewards fluent, overlapping
+n-grams and is standard in summarization benchmarks.
 
 ## How to test it
-Step-by-step instructions for the reviewer to reproduce your change:
 1. Load the built-in example dataset
-2. Go to Tab 2, select "ROUGE-L" from the Metric dropdown
+2. Go to Tab 2 → Metric dropdown → select 'ROUGE-L'
 3. Run BootstrapFewShot
-4. Verify the score in the Results tab is between 0 and 1
+4. Confirm the score in the Results tab is a float between 0 and 1
 
 ## Checklist
-- [ ] Tested with the built-in example (10-row dataset)
-- [ ] Tested with squad_sample_200.csv
-- [ ] requirements.txt updated (if new package added)
-- [ ] No API keys or personal data committed
+- [x] Tested with the built-in example (10-row dataset)
+- [x] Tested with squad_sample_200.csv
+- [x] requirements.txt updated (rouge-score>=0.1.2 added)
+- [x] No API keys or personal data committed"
+```
+
+You will see output like:
+
+```
+https://github.com/Laxminarayen/dspy-prompt-optimizer/pull/7
+```
+
+That URL is your PR. Share it with the maintainer.
+
+**Useful `gh pr` commands after opening:**
+
+```bash
+# View your PR in the terminal
+gh pr view feat/rouge-metric
+
+# Open your PR in the browser
+gh pr view feat/rouge-metric --web
+
+# Check CI / review status
+gh pr status
+
+# List all open PRs on the upstream repo
+gh pr list --repo Laxminarayen/dspy-prompt-optimizer
+
+# See review comments left on your PR
+gh pr view feat/rouge-metric --comments
+
+# See which files changed in your PR
+gh pr diff feat/rouge-metric
+
+# Mark your PR as ready for review (if you opened it as a draft)
+gh pr ready feat/rouge-metric
+
+# Convert an open PR back to draft while you fix things
+gh pr ready feat/rouge-metric --undo
+
+# Close (abandon) a PR without merging
+gh pr close feat/rouge-metric --comment "Closing — superseded by #12"
 ```
 
 ---
 
-### 10. Keeping your fork in sync
+#### Option B — GitHub web UI
+
+1. Push your branch to your fork:
+
+   ```bash
+   git push -u origin feat/rouge-metric
+   ```
+
+2. Go to `https://github.com/<your-username>/dspy-prompt-optimizer` in your browser. GitHub will show a yellow banner:
+
+   > **feat/rouge-metric** had recent pushes — **Compare & pull request**
+
+   Click that button.
+
+3. On the "Open a pull request" page:
+   - **Base repository:** `Laxminarayen/dspy-prompt-optimizer` | **base:** `main`
+   - **Head repository:** `<your-username>/dspy-prompt-optimizer` | **compare:** `feat/rouge-metric`
+   - Fill in the title and body using the template below.
+   - Click **Create pull request**.
+
+If the yellow banner has disappeared, go to the **Pull requests** tab → click **New pull request** → click **compare across forks** → set the head fork and branch manually.
+
+---
+
+#### PR description template
+
+Copy this into the PR body every time:
+
+```markdown
+## What this PR does
+<!-- One sentence. Be specific: "Adds ROUGE-L metric" not "Improves metrics". -->
+
+## Why
+<!-- Motivation. Link to an issue with "Closes #<number>" if one exists. -->
+
+## How to test it
+<!-- Step-by-step so the reviewer can reproduce your change without guessing. -->
+1. Load the built-in example dataset (Tab 1 → Use example dataset)
+2. ...
+3. Expected result: ...
+
+## Screenshots (if UI changed)
+<!-- Drag and drop a screenshot here. Helps reviewers see what changed visually. -->
+
+## Checklist
+- [ ] Tested with the built-in example (10-row training + 5-row test)
+- [ ] Tested with `squad_sample_200.csv` uploaded as training data
+- [ ] `requirements.txt` updated if a new package was added
+- [ ] No API keys, `.env` files, or personal CSV data committed
+- [ ] Column name sanitization not broken (tested with a column named "first name")
+```
+
+---
+
+#### Opening a draft PR (work in progress)
+
+If your feature is not finished but you want early feedback or want to show progress:
+
+```bash
+# Via CLI — add --draft flag
+gh pr create \
+  --repo Laxminarayen/dspy-prompt-optimizer \
+  --base main \
+  --head <your-username>:feat/rouge-metric \
+  --title "feat: add ROUGE-L metric [WIP]" \
+  --draft \
+  --body "Work in progress — opening early for design feedback on the metric API."
+
+# When ready to request a full review:
+gh pr ready feat/rouge-metric
+```
+
+Via the web UI, tick **"Create draft pull request"** instead of clicking the green button.
+
+---
+
+### 10. Responding to review comments
+
+After a reviewer leaves comments on your PR, update your code locally, then push again — GitHub automatically updates the PR with the new commits. **Do not close and re-open a PR to address feedback.**
+
+```bash
+# Make the requested changes in app.py, then:
+git add app.py
+git commit -m "fix: address review — use stemmer=False for ROUGE-L per feedback"
+git push origin feat/rouge-metric
+# The PR updates automatically — no further action needed
+```
+
+To reply to a specific review comment from the terminal:
+
+```bash
+gh pr review feat/rouge-metric --comment \
+  --body "Done — switched to stemmer=False and added a note in the docstring."
+```
+
+To approve a PR you are reviewing (maintainer action):
+
+```bash
+gh pr review <pr-number> --approve --body "LGTM — tested locally with squad_sample_200.csv"
+```
+
+To request changes as a reviewer:
+
+```bash
+gh pr review <pr-number> --request-changes \
+  --body "Please add the new package to requirements.txt before merging."
+```
+
+---
+
+### 11. Handling merge conflicts
+
+If `main` has moved ahead of your branch and GitHub shows "This branch has conflicts that must be resolved":
+
+```bash
+# Fetch the latest upstream changes
+git fetch upstream
+
+# Rebase your branch on top of the updated main
+git rebase upstream/main
+
+# Git will pause at each conflicting file and show conflict markers:
+# <<<<<<< HEAD (your changes)
+# ...
+# ======= 
+# ...
+# >>>>>>> upstream/main (upstream changes)
+#
+# Edit the file to resolve conflicts, then:
+git add app.py
+git rebase --continue
+
+# If rebase gets complicated and you want to start over:
+git rebase --abort
+
+# After a clean rebase, force-push (--force-with-lease is safer than --force)
+git push origin feat/rouge-metric --force-with-lease
+```
+
+`--force-with-lease` refuses to overwrite if someone else pushed to your branch after your last fetch — it prevents accidentally clobbering a co-author's work.
+
+---
+
+### 12. Keeping your fork in sync
 
 While your PR is under review, upstream `main` may receive other changes. Rebase your branch to keep a clean history:
 
 ```bash
+# Fetch all branches from upstream (does not change your local files)
 git fetch upstream
+
+# Check what changed on upstream main since you branched
+git log HEAD..upstream/main --oneline
+
+# Rebase your branch on top of latest upstream main
 git rebase upstream/main feat/rouge-metric
+
+# Push the rebased branch (requires force since history was rewritten)
 git push origin feat/rouge-metric --force-with-lease
 ```
 
-Use `--force-with-lease` rather than `--force` — it refuses to overwrite if someone else has pushed to your branch since your last fetch.
+To also keep your fork's `main` branch in sync (good hygiene):
+
+```bash
+git checkout main
+git pull upstream main
+git push origin main
+```
+
+---
+
+#### Quick reference — all the `gh` commands you'll need
+
+```bash
+# ── Setup ─────────────────────────────────────────────────────────────────────
+gh auth login                                     # authenticate once
+gh auth status                                    # verify you're logged in
+
+# ── Creating PRs ──────────────────────────────────────────────────────────────
+gh pr create                                      # interactive wizard (prompts you)
+gh pr create --title "..." --body "..." --base main   # non-interactive
+gh pr create --draft                              # open as draft / WIP
+
+# ── Viewing PRs ───────────────────────────────────────────────────────────────
+gh pr list                                        # list PRs on current repo
+gh pr list --repo Laxminarayen/dspy-prompt-optimizer  # list PRs on upstream
+gh pr view <number>                               # view a specific PR
+gh pr view <number> --web                         # open it in the browser
+gh pr view <number> --comments                    # see all review comments
+gh pr diff <number>                               # show the diff
+gh pr status                                      # show PRs related to your branches
+
+# ── Updating PRs ──────────────────────────────────────────────────────────────
+gh pr edit <number> --title "new title"           # edit title
+gh pr edit <number> --body "new body"             # edit description
+gh pr edit <number> --add-label "feat"            # add a label
+gh pr ready <number>                              # mark draft as ready for review
+gh pr ready <number> --undo                       # revert back to draft
+
+# ── Reviewing PRs ─────────────────────────────────────────────────────────────
+gh pr review <number> --approve                   # approve
+gh pr review <number> --request-changes           # request changes
+gh pr review <number> --comment --body "..."      # leave a comment
+
+# ── Checking out a PR locally (to test someone else's PR) ────────────────────
+gh pr checkout <number>                           # switches to that branch locally
+
+# ── Merging / closing PRs ─────────────────────────────────────────────────────
+gh pr merge <number> --squash                     # squash and merge (preferred)
+gh pr merge <number> --rebase                     # rebase merge
+gh pr merge <number> --merge                      # regular merge commit
+gh pr close <number>                              # close without merging
+gh pr close <number> --comment "reason"           # close with a comment
+
+# ── Issues (for referencing in PRs) ──────────────────────────────────────────
+gh issue list                                     # list open issues
+gh issue create --title "..." --body "..."        # open a new issue
+gh issue view <number>                            # view an issue
+```
 
 ---
 
